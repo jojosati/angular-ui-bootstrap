@@ -9,7 +9,10 @@ angular.module('ui.bootstrap.datepicker', [])
   monthTitleFormat: 'yyyy',
   showWeeks: true,
   startingDay: 0,
-  yearRange: 20
+  yearRange: 20,
+  storeFormat: null,
+  minDate: null,
+  maxDate: null
 })
 
 .directive( 'datepicker', ['dateFilter', '$parse', 'datepickerConfig', function (dateFilter, $parse, datepickerConfig) {
@@ -25,35 +28,55 @@ angular.module('ui.bootstrap.datepicker', [])
       scope.mode = 'day'; // Initial mode
 
       // Configuration parameters
-      var selected = new Date(), showWeeks, minDate, maxDate, format = {};
-      format.day   = angular.isDefined(attrs.dayFormat) ? scope.$eval(attrs.dayFormat) : datepickerConfig.dayFormat;
-      format.month = angular.isDefined(attrs.monthFormat) ? scope.$eval(attrs.monthFormat) : datepickerConfig.monthFormat;
-      format.year  = angular.isDefined(attrs.yearFormat) ? scope.$eval(attrs.yearFormat) : datepickerConfig.yearFormat;
-      format.dayHeader  = angular.isDefined(attrs.dayHeaderFormat) ? scope.$eval(attrs.dayHeaderFormat) : datepickerConfig.dayHeaderFormat;
-      format.dayTitle   = angular.isDefined(attrs.dayTitleFormat) ? scope.$eval(attrs.dayTitleFormat) : datepickerConfig.dayTitleFormat;
-      format.monthTitle = angular.isDefined(attrs.monthTitleFormat) ? scope.$eval(attrs.monthTitleFormat) : datepickerConfig.monthTitleFormat;
-      var startingDay   = angular.isDefined(attrs.startingDay) ? scope.$eval(attrs.startingDay) : datepickerConfig.startingDay;
-      var yearRange = angular.isDefined(attrs.yearRange) ? scope.$eval(attrs.yearRange) : datepickerConfig.yearRange;
+      var selected  = new Date(),
+          config    = angular.extend({}, datepickerConfig),
+          watchable = {};
 
-      if (attrs.showWeeks) {
-        scope.$parent.$watch($parse(attrs.showWeeks), function(value) {
-          showWeeks = !! value;
+      // config assignment via datepicker attrs
+      if (angular.isDefined(attrs.datepicker)) {
+        var attr = scope.$eval(attrs.datepicker) ;
+
+        if (angular.isObject(attr)) {
+          angular.extend(config, attr);
+        }
+        else if (angular.isString(attr)) {
+          if (attr.match(/day|month|year/)) {
+            scope.mode = attr;
+          }
+        }
+      }
+
+      if (angular.isDefined(attrs.datepickerMode)){
+        scope.mode = scope.$eval(attrs.datepickerMode);
+        watchable.mode = attrs.datepickerMode;
+      }
+      // override config with individual assignment via attrs with same name
+      for (var k in config){
+        if (angular.isDefined(attrs[k])) {
+          config[k]     = scope.$eval(attrs[k]);
+          watchable[k]  = attrs[k] ;
+        }
+      }
+
+      // watchable init
+      if (watchable.showWeeks) {
+        scope.$parent.$watch($parse(watchable.showWeeks), function(value) {
+          config.showWeeks = !! value;
           updateShowWeekNumbers();
         });
       } else {
-        showWeeks = datepickerConfig.showWeeks;
         updateShowWeekNumbers();
       }
 
-      if (attrs.min) {
-        scope.$parent.$watch($parse(attrs.min), function(value) {
-          minDate = value ? new Date(value) : null;
+      if (watchable.minDate) {
+        scope.$parent.$watch($parse(watchable.minDate), function(value) {
+          config.minDate = Date.parse(value) && new Date(value);
           refill();
         });
       }
-      if (attrs.max) {
-        scope.$parent.$watch($parse(attrs.max), function(value) {
-          maxDate = value ? new Date(value) : null;
+      if (watchable.maxDate) {
+        scope.$parent.$watch($parse(watchable.maxDate), function(value) {
+          config.maxDate = Date.parse(value) && new Date(value);
           refill();
         });
       }
@@ -66,7 +89,7 @@ angular.module('ui.bootstrap.datepicker', [])
 
       // Define whether the week number are visible
       function updateShowWeekNumbers() {
-        scope.showWeekNumbers = ( scope.mode === 'day' && showWeeks );
+        scope.showWeekNumbers = ( scope.mode === 'day' && config.showWeeks );
       }
 
       function compare( date1, date2 ) {
@@ -80,7 +103,10 @@ angular.module('ui.bootstrap.datepicker', [])
       }
 
       function isDisabled(date) {
-        return ((minDate && compare(date, minDate) > 0) || (maxDate && compare(date, maxDate) < 0) || (scope.dateDisabled && scope.dateDisabled({ date: date, mode: scope.mode })));
+        return ((config.minDate && compare(date, config.minDate) > 0) 
+              || (config.maxDate && compare(date, config.maxDate) < 0) 
+              || (scope.dateDisabled && scope.dateDisabled({ date: date, mode: scope.mode }))
+              );
       }
 
       // Split array into smaller arrays
@@ -91,6 +117,7 @@ angular.module('ui.bootstrap.datepicker', [])
         }
         return arrays;
       };
+
       var getDaysInMonth = function( year, month ) {
         return new Date(year, month + 1, 0).getDate();
       };
@@ -101,7 +128,7 @@ angular.module('ui.bootstrap.datepicker', [])
 
           function addDays( dt, n, isCurrentMonth ) {
             for (var i =0; i < n; i ++) {
-              days.push( {date: new Date(dt), isCurrent: isCurrentMonth, isSelected: isSelected(dt), label: dateFilter(dt, format.day), disabled: isDisabled(dt) } );
+              days.push( {date: new Date(dt), isCurrent: isCurrentMonth, isSelected: isSelected(dt), label: dateFilter(dt, config.dayFormat), disabled: isDisabled(dt) } );
               dt.setDate( dt.getDate() + 1 );
             }
             lastDate = dt;
@@ -110,7 +137,7 @@ angular.module('ui.bootstrap.datepicker', [])
           var d = new Date(selected);
           d.setDate(1);
 
-          var difference = startingDay - d.getDay();
+          var difference = config.startingDay - d.getDay();
           var numDisplayedFromPreviousMonth = (difference > 0) ? 7 - difference : - difference;
 
           if ( numDisplayedFromPreviousMonth > 0 ) {
@@ -122,45 +149,51 @@ angular.module('ui.bootstrap.datepicker', [])
 
           // Day labels
           for (i = 0; i < 7; i++) {
-            labels.push(  dateFilter(days[i].date, format.dayHeader) );
+            labels.push(  dateFilter(days[i].date, config.dayHeaderFormat) );
           }
-          updateCalendar( split( days, 7 ), labels, dateFilter(selected, format.dayTitle) );
+          updateCalendar( split( days, 7 ), labels, dateFilter(selected, config.dayTitleFormat) );
         },
+
         month: function() {
           var months = [], i = 0, year = selected.getFullYear();
           while ( i < 12 ) {
             var dt = new Date(year, i++, 1);
-            months.push( {date: dt, isCurrent: true, isSelected: isSelected(dt), label: dateFilter(dt, format.month), disabled: isDisabled(dt)} );
+            months.push( {date: dt, isCurrent: true, isSelected: isSelected(dt), label: dateFilter(dt, config.monthFormat), disabled: isDisabled(dt)} );
           }
-          updateCalendar( split( months, 3 ), [], dateFilter(selected, format.monthTitle) );
+          updateCalendar( split( months, 3 ), [], dateFilter(selected, config.monthTitleFormat) );
         },
+
         year: function() {
-          var years = [], year = parseInt((selected.getFullYear() - 1) / yearRange, 10) * yearRange + 1;
-          for ( var i = 0; i < yearRange; i++ ) {
+          var years = [], year = parseInt((selected.getFullYear() - 1) / config.yearRange, 10) * config.yearRange + 1;
+          for ( var i = 0; i < config.yearRange; i++ ) {
             var dt = new Date(year + i, 0, 1);
-            years.push( {date: dt, isCurrent: true, isSelected: isSelected(dt), label: dateFilter(dt, format.year), disabled: isDisabled(dt)} );
+            years.push( {date: dt, isCurrent: true, isSelected: isSelected(dt), label: dateFilter(dt, config.yearFormat), disabled: isDisabled(dt)} );
           }
           var title = years[0].label + ' - ' + years[years.length - 1].label;
           updateCalendar( split( years, 5 ), [], title );
         }
       };
+
       var refill = function() {
         fill[scope.mode]();
       };
+
       var isSelected = function( dt ) {
-        if ( scope.model && scope.model.getFullYear() === dt.getFullYear() ) {
+        var odt = Date.parse(scope.model) && new Date(scope.model);
+
+        if ( odt && odt.getFullYear() === dt.getFullYear() ) {
           if ( scope.mode === 'year' ) {
             return true;
           }
-          if ( scope.model.getMonth() === dt.getMonth() ) {
-            return ( scope.mode === 'month' || (scope.mode === 'day' && scope.model.getDate() === dt.getDate()) );
+          if ( odt.getMonth() === dt.getMonth() ) {
+            return ( scope.mode === 'month' || (scope.mode === 'day' && odt.getDate() === dt.getDate()) );
           }
         }
         return false;
       };
 
       scope.$watch('model', function ( dt, olddt ) {
-        if ( angular.isDate(dt) ) {
+        if ( Date.parse(dt) ) {
           selected = new Date(dt);
         }
 
@@ -168,6 +201,7 @@ angular.module('ui.bootstrap.datepicker', [])
           refill();
         }
       });
+
       scope.$watch('mode', function() {
         updateShowWeekNumbers();
         refill();
@@ -184,27 +218,34 @@ angular.module('ui.bootstrap.datepicker', [])
           selected.setMonth( dt.getMonth() );
         } else if ( scope.mode === 'day' ) {
           scope.model = new Date(selected);
+          if (config.storeFormat) {
+             scope.model =  angular.isFunction(scope.model[config.storeFormat]) ? 
+                              scope.model[config.storeFormat]() : dateFilter(scope.model, config.storeFormat) ;
+          }
         }
       };
+
       scope.move = function(step) {
         if (scope.mode === 'day') {
           selected.setMonth( selected.getMonth() + step );
         } else if (scope.mode === 'month') {
           selected.setFullYear( selected.getFullYear() + step );
         } else if (scope.mode === 'year') {
-          selected.setFullYear( selected.getFullYear() + step * yearRange );
+          selected.setFullYear( selected.getFullYear() + step * config.yearRange );
         }
         refill();
       };
+
       scope.toggleMode = function() {
         scope.mode = ( scope.mode === 'day' ) ? 'month' : ( scope.mode === 'month' ) ? 'year' : 'day';
       };
+
       scope.getWeekNumber = function(row) {
         if ( scope.mode !== 'day' || ! scope.showWeekNumbers || row.length !== 7 ) {
           return;
         }
 
-        var index = ( startingDay > 4 ) ? 11 - startingDay : 4 - startingDay; // Thursday
+        var index = ( config.startingDay > 4 ) ? 11 - config.startingDay : 4 - config.startingDay; // Thursday
         var d = new Date( row[ index ].date );
         d.setHours(0, 0, 0);
         return Math.ceil((((d - new Date(d.getFullYear(), 0, 1)) / 86400000) + 1) / 7); // 86400000 = 1000*60*60*24;
@@ -212,3 +253,4 @@ angular.module('ui.bootstrap.datepicker', [])
     }
   };
 }]);
+
